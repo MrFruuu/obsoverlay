@@ -2,18 +2,48 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OBS Overlay</title>
+
 <style>
 body{
   margin:0;
-  background:transparent;
   font-family:Arial;
+  background:#0b0b0b;
+  color:white;
+}
+
+/* LAYOUT */
+.app{
+  display:grid;
+  grid-template-columns:400px 1fr;
+  height:100vh;
+}
+
+/* EDITOR */
+.panel{
+  padding:15px;
+  background:#111;
+  border-right:1px solid #222;
+}
+
+input, select, button{
+  margin:4px;
+  padding:6px;
+  border-radius:6px;
+  border:none;
+}
+
+button{
+  background:#222;
+  color:white;
+  cursor:pointer;
 }
 
 /* OVERLAY */
 .overlay{
   display:flex;
-  gap:12px;
+  gap:10px;
   padding:10px;
 }
 
@@ -23,7 +53,6 @@ body{
   background:#1a1a1a;
   border-radius:10px;
   overflow:hidden;
-  box-shadow:0 0 10px rgba(0,0,0,0.5);
   text-align:center;
 }
 
@@ -35,10 +64,9 @@ body{
 
 /* NOME */
 .name{
-  font-size:13px;
-  padding:6px;
   background:#111;
-  color:white;
+  padding:5px;
+  font-size:13px;
 }
 
 /* BADGE */
@@ -48,65 +76,174 @@ body{
   font-size:12px;
 }
 
-.win{
-  background:#2ecc71;
-}
-
-.lose{
-  background:#e74c3c;
-}
-
-.none{
-  background:#333;
-}
+.win{background:#2ecc71;}
+.lose{background:#e74c3c;}
+.none{background:#333;}
 </style>
 </head>
 
 <body>
 
+<div class="app">
+
+<!-- EDITOR -->
+<div class="panel">
+<h2>Editor Overlay</h2>
+
+Numero giochi:
+<input type="number" id="count" value="5">
+<button onclick="setCount()">Applica</button>
+
+<br><br>
+
+<button onclick="save()">💾 Salva</button>
+<button onclick="resetAll()">Reset</button>
+
+<hr>
+
+<div id="editor"></div>
+</div>
+
+<!-- OVERLAY -->
+<div>
+<h2 style="padding:10px;">Preview</h2>
 <div class="overlay" id="overlay"></div>
+</div>
+
+</div>
 
 <script>
-const LS_KEY = "obsOverlayGames_v1";
+const LS_KEY="obsOverlayGames_v2";
+let games=JSON.parse(localStorage.getItem(LS_KEY))||[];
 
-function load(){
-  return JSON.parse(localStorage.getItem(LS_KEY)) || [];
+/* NASCONDE EDITOR IN OBS */
+const params=new URLSearchParams(window.location.search);
+if(params.get("overlay")==="1"){
+  document.querySelector(".panel")?.remove();
+  document.querySelector("h2")?.remove();
 }
 
-function draw(){
-  const data = load();
-  const container = document.getElementById("overlay");
-  container.innerHTML = "";
+/* CREA NUMERO GIOCHI */
+function setCount(){
+  let count=document.getElementById("count").value;
 
-  data.forEach(g=>{
-    let stateText = "";
-    let stateClass = "none";
+  while(games.length<count){
+    games.push({
+      name:"Game",
+      state:"",
+      imageData:""
+    });
+  }
 
-    if(g.state==="win"){
-      stateText="WIN";
-      stateClass="win";
-    }
-    else if(g.state==="lose"){
-      stateText="LOSE";
-      stateClass="lose";
-    }
-    else{
-      stateText="";
-    }
+  games.length=count;
+  drawEditor();
+}
 
-    container.innerHTML += `
-    <div class="card">
-      <img src="${g.imageData || ""}">
-      <div class="name">${g.name}</div>
-      <div class="badge ${stateClass}">
-        ${stateText}
-      </div>
+/* CONVERTE IMMAGINE */
+function fileToBase64(file){
+  return new Promise(res=>{
+    const reader=new FileReader();
+    reader.onload=()=>res(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
+
+/* DISEGNA EDITOR */
+function drawEditor(){
+  const ed=document.getElementById("editor");
+  if(!ed) return;
+
+  ed.innerHTML="";
+
+  games.forEach((g,i)=>{
+    ed.innerHTML+=`
+    <div>
+      <b>Gioco ${i+1}</b><br>
+
+      Nome:
+      <input value="${g.name}"
+      onchange="games[${i}].name=this.value">
+
+      <br>
+
+      Stato:
+      <select onchange="games[${i}].state=this.value">
+        <option value="">---</option>
+        <option value="win" ${g.state==="win"?"selected":""}>WIN</option>
+        <option value="lose" ${g.state==="lose"?"selected":""}>LOSE</option>
+      </select>
+
+      <br>
+
+      Immagine:
+      <input type="file" onchange="uploadImg(event,${i})">
+
+      <hr>
     </div>`;
   });
 }
 
-setInterval(draw,500);
-draw();
+/* CARICA IMMAGINE */
+async function uploadImg(e,i){
+  const file=e.target.files[0];
+  if(!file) return;
+
+  const base64=await fileToBase64(file);
+  games[i].imageData=base64;
+
+  drawOverlay();
+}
+
+/* SALVA */
+function save(){
+  localStorage.setItem(LS_KEY,JSON.stringify(games));
+}
+
+/* RESET */
+function resetAll(){
+  localStorage.removeItem(LS_KEY);
+  games=[];
+  drawEditor();
+  drawOverlay();
+}
+
+/* DISEGNA OVERLAY */
+function drawOverlay(){
+  const container=document.getElementById("overlay");
+  container.innerHTML="";
+
+  games.forEach(g=>{
+    let text="";
+    let cls="none";
+
+    if(g.state==="win"){
+      text="WIN";
+      cls="win";
+    }
+    if(g.state==="lose"){
+      text="LOSE";
+      cls="lose";
+    }
+
+    container.innerHTML+=`
+    <div class="card">
+      <img src="${g.imageData||""}">
+      <div class="name">${g.name}</div>
+      <div class="badge ${cls}">${text}</div>
+    </div>`;
+  });
+}
+
+/* AUTO REFRESH */
+setInterval(drawOverlay,500);
+
+/* INIT */
+if(games.length===0){
+  setCount();
+}else{
+  drawEditor();
+  drawOverlay();
+}
 </script>
 
 </body>
